@@ -260,3 +260,35 @@ def test_resolve_dispute_by_non_member_keeps_dispute_open(L):
     with pytest.raises(LedgerError):
         L.resolve_dispute("Mallory", "E1", 50)
     assert L.escrows["E1"]["state"] == "DISPUTED"
+
+
+# ---- survivors of the mutation pass ---------------------------------------------------------------
+
+def test_verify_rejects_rehashed_block_with_wrong_index(L):
+    """index is covered by the hash but NOT the HMAC, so only the explicit index check catches a re-hashed block."""
+    L.append("FPO-1", "note", {"n": 1})
+    L.append("Agency", "note", {"n": 2})
+    b = L.blocks[1]
+    b["index"] = 5
+    b["hash"] = _h({k: b[k] for k in ("index", "ts", "prev", "payload", "sig")})
+    assert L.verify() is False
+
+
+def test_reconcile_sums_multiple_released_escrows_per_farmer(L):
+    L.open_escrow("FPO-1", "E1", "F001", 100, "B")
+    L.open_escrow("FPO-1", "E2", "F001", 40, "B")
+    L.confirm_delivery("FPO-1", "E1", "A", 1)
+    L.confirm_delivery("FPO-1", "E2", "B", 1)
+    L.disburse("Agency", "S", "P", "F001", 5, True)
+    assert L.reconcile({}) == {"F001": 145}
+    assert L.reconcile({"F001": 100}) == {"F001": 45}
+
+
+def test_verify_rejects_rehashed_block_with_wrong_prev_link(L):
+    """prev is covered by the hash but NOT the HMAC, so only the explicit link check catches a re-hashed block."""
+    L.append("FPO-1", "note", {"n": 1})
+    L.append("Agency", "note", {"n": 2})
+    b = L.blocks[1]
+    b["prev"] = GENESIS
+    b["hash"] = _h({k: b[k] for k in ("index", "ts", "prev", "payload", "sig")})
+    assert L.verify() is False
